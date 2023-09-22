@@ -20,7 +20,7 @@ class SessionDB {
       const { resources: results } = await this.container.items.query(querySpec).fetchAll();
   
       if (results.length > 0) {
-        console.log("Success", results[0]);
+        console.log("Success, Sessions", results[0]);
       } else {
         console.log("Session not found");
       }
@@ -38,17 +38,17 @@ class SessionDB {
     };
   
     try {
-      // Check if the session already exists
-      const { resource: existingItem } = await this.container.item(username).read();
-  
-      if (existingItem) {
-        // If the session exists, replace it with the new session data
-        const { resource: replacedItem } = await this.container.item(username).replace(sessionData);
-        console.log("Session Updated:", replacedItem);
-      } else {
-        // If the session does not exist, create a new session
+      const sessions = await this.queryByUsername(username);
+      if (sessions.length === 0) {
         const { resource: createdItem } = await this.container.items.create(sessionData);
         console.log("Session Created:", createdItem);
+      } else {   
+        for(const existingItem of sessions){
+          console.log("SESSION found:", existingItem);
+          const { resource: replacedItem } = await this.container.item(existingItem.id, existingItem.id).replace(sessionData);
+          console.log("Session Updated:", replacedItem)
+        }
+        
       }
     } catch (err) {
       console.error("Error", err);
@@ -59,7 +59,6 @@ class SessionDB {
   async findAllSessions(callback) {
     try {
       const { resources: sessions } = await this.container.items.readAll().fetchAll();
-      console.log("Success", sessions);
       callback(null, sessions);
     } catch (err) {
       console.error("Error", err);
@@ -75,7 +74,7 @@ class SessionDB {
       };
   
       const { resources: results } = await this.container.items.query(querySpec).fetchAll();
-      console.log("Success", results);
+      console.log("Success Found user", results);
       return results;
     } catch (err) {
       console.error("Error", err);
@@ -86,7 +85,7 @@ class SessionDB {
   async deleteSession(id) {
     try {
       const { resource: deletedItem } = await this.container.item(id, id).delete();
-      console.log("Success", deletedItem);
+      console.log("Success Deleted Item", deletedItem);
     } catch (err) {
       console.error("Error", err);
     }

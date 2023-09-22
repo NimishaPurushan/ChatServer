@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require('fs');
 const http = require("http");
 const express = require("express");
 const socketio = require("socket.io");
@@ -60,21 +61,23 @@ io.on("connection", (socket) => {
     userID: socket.userID,
   });
   
+  socket.join(socket.userID);  
+  console.log(io.of("/").adapter);
+  io.to(socket.userID).emit("message", "Welcome!");
+
   sessionDB.findAllSessions(function (err, sessions) {
     if (err) {
         console.error("Error retrieving sessions:", err);
     } else {
-        console.log("All sessions:", sessions);
+        const users = sessions.map((session) => {
+          return {
+            username: session.username,
+          };
+        });
+        console.log("users", users);
+        io.to(socket.userID).emit("server_message", users);
     }
-});
-
-  socket.join(socket.userID);
-  
-  console.log(io.of("/").adapter);
-
-  // Welcome current user
-  io.to(socket.userID).emit("message", "Welcome!");
-
+    });
 
     // private message
     socket.on("join", async (to) => {
@@ -109,6 +112,26 @@ io.on("connection", (socket) => {
       io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
     }
   });
+
+
+  socket.on('sendFile', async ({ filePath, to }) => {
+    console.log('Sending file...', filePath);
+    try {
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.on('data', (chunk) => {
+        // Send the file data chunk to the client
+        socket.to(to).emit('file', { fileData: chunk, fileName: path.basename(filePath) });
+      });
+      fileStream.on('end', () => {
+        socket.to(to).emit('file', { end: "end", fileName: path.basename(filePath) });
+        console.log('File transmission completed.');
+      });
+    } catch (err) {
+      console.error("Error sending the file:", err);
+      io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
+    }
+  });
+
 
   // Runs when client disconnects
   socket.on("disconnect", () => {
