@@ -1,5 +1,4 @@
 const path = require("path");
-const fs = require('fs');
 const http = require("http");
 const express = require("express");
 const socketio = require("socket.io");
@@ -8,7 +7,7 @@ const {RedisStore} = require("./utils/redisStore")
 require("dotenv").config();
 
 const redisConfig = {
-  url: `rediss://${process.env.AZURE_CACHE_FOR_REDIS_HOST_NAME}:6380`,
+  url: process.env.AZURE_CACHE_FOR_REDIS_URL,
   password: process.env.AZURE_CACHE_FOR_REDIS_ACCESS_KEY,
 }
 const sessionStore= new RedisStore(redisConfig)
@@ -141,7 +140,7 @@ io.on("connection", (socket) => {
   socket.on('fileEnd', async ({ fileName, to }) => {
     console.log('File transmission completed.', fileName);
     try {
-        socket.to(to).emit('file', { fileEnd: "fileEnd", fileName: fileName });
+        socket.to(to).emit('file', { filend: "fileEnd", fileName: fileName });
     } catch (err) {
       console.error("Error sending the file:", err);
       io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
