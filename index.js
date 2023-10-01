@@ -4,14 +4,20 @@ const http = require("http");
 const express = require("express");
 const socketio = require("socket.io");
 const formatMessage = require("./utils/messages");
+const {RedisStore} = require("./utils/redisStore")
 require("dotenv").config();
 
+const redisConfig = {
+  url: `rediss://${process.env.AZURE_CACHE_FOR_REDIS_HOST_NAME}:6380`,
+  password: process.env.AZURE_CACHE_FOR_REDIS_ACCESS_KEY,
+}
+const sessionStore= new RedisStore(redisConfig)
 const azureConfig = {
   endpoint: process.env.ENDPOINT,
   key : process.env.KEY
 }
-const {SessionDB} = require("./utils/sessionDBAzure")
-const sessionDB = new SessionDB(azureConfig)
+// const {SessionDB} = require("./utils/sessionDBAzure")
+// const sessionDB = new SessionDB(azureConfig)
 
 
 const app = express();
@@ -38,7 +44,7 @@ io.use(async (socket, next) => {
   console.log("Session Id:", sessionID)
   if (sessionID) {    
     if (session) {
-      const session = await sessionDB.findSession(username);
+      // const session = await sessionDB.findSession(username);
       socket.sessionID = sessionID;
       socket.userID = session.userID;
       socket.username = session.username;
@@ -48,7 +54,8 @@ io.use(async (socket, next) => {
   socket.sessionID = randomId();
   socket.userID = randomId();
   socket.username = username;
-  sessionDB.saveSession(socket.userID,socket.sessionID, socket.username)
+  // sessionDB.saveSession(socket.userID,socket.sessionID, socket.username)
+  sessionStore.saveUserInfo(socket.username, socket.userID, socket.sessionID)
   next();
 });
 
@@ -65,38 +72,43 @@ io.on("connection", (socket) => {
   console.log(io.of("/").adapter);
   io.to(socket.userID).emit("message", "Welcome!");
 
-  sessionDB.findAllSessions(function (err, sessions) {
-    if (err) {
-        console.error("Error retrieving sessions:", err);
-    } else {
-        const users = sessions.map((session) => {
-          return {
-            username: session.username,
-          };
-        });
-        console.log("users", users);
-        io.to(socket.userID).emit("server_message", users);
-    }
-    });
+  // sessionDB.findAllSessions(function (err, sessions) {
+  //   if (err) {
+  //       console.error("Error retrieving sessions:", err);
+  //   } else {
+  //       const users = sessions.map((session) => {
+  //         return {
+  //           username: session.username,
+  //         };
+  //       });
+  //       console.log("users", users);
+  //       io.to(socket.userID).emit("server_message", users);
+  //   }
+  //   });
 
     // private message
     socket.on("join", async (to) => {
       try {
-        const sessions = await sessionDB.queryByUsername(to);
-        if (sessions.length === 0) {
-          console.log("User not found");
-          io.to(socket.userID).emit("server_message", {"message":"User not found"});
-        } else {
-          console.log("Sessions:", sessions);
+        // const sessions = await sessionDB.queryByUsername(to);
+        const session_id = await sessionStore.getUserInfo(to)
+
+        console.log("redissession", session_id);
+        io.to(socket.userID).emit("server_message", {"message": "connected", "id": session_id.toString()});
+        io.to(session_id).emit("server_message", {"message": "connected", "id": socket.userID});
+        // if (sessions.length === 0) {
+        //   console.log("User not found");
+        //   io.to(socket.userID).emit("server_message", {"message":"User not found"});
+        // } else {
+        //   console.log("Sessions:", sessions);
     
           // Loop through the sessions after awaiting the promise
-          for (const session of sessions) {
-            console.log("Sending message to session id:",session.id.toString());
-            io.to(socket.userID).emit("server_message", {"message": "connected", "id": session.id.toString()});
-            io.to(session.id).emit("server_message", {"message": "connected", "id": socket.userID});
-            break;
-          }
-        }
+          // for (const session of sessions) {
+          //   console.log("Sending message to session id:",session.id.toString());
+          //   io.to(socket.userID).emit("server_message", {"message": "connected", "id": session.id.toString()});
+          //   io.to(session.id).emit("server_message", {"message": "connected", "id": socket.userID});
+          //   break;
+          // }
+      
       } catch (err) {
         console.error("Error querying by username:", err);
         io.to(socket.userID).emit("server_message", {"message":"An error occurred"});
@@ -114,23 +126,28 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on('sendFile', async ({ filePath, to }) => {
-    console.log('Sending file...', filePath);
+  socket.on('sendFile', async ({ fileName, fileChunk, to }) => {
+    console.log('Sending file...', fileName);
     try {
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.on('data', (chunk) => {
+
         // Send the file data chunk to the client
-        socket.to(to).emit('file', { fileData: chunk, fileName: path.basename(filePath) });
-      });
-      fileStream.on('end', () => {
-        socket.to(to).emit('file', { end: "end", fileName: path.basename(filePath) });
-        console.log('File transmission completed.');
-      });
+        socket.to(to).emit('file', { fileChunk: fileChunk, fileName: fileName });
     } catch (err) {
       console.error("Error sending the file:", err);
       io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
     }
   });
+
+  socket.on('fileEnd', async ({ fileName, to }) => {
+    console.log('File transmission completed.', fileName);
+    try {
+        socket.to(to).emit('file', { fileEnd: "fileEnd", fileName: fileName });
+    } catch (err) {
+      console.error("Error sending the file:", err);
+      io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
+    }
+  }
+  );
 
 
   // Runs when client disconnects
@@ -141,7 +158,7 @@ io.on("connection", (socket) => {
       formatMessage(`${socket.username} has left the chat`)
     );
     
-    sessionDB.deleteSession(socket.userID)
+    // sessionDB.deleteSession(socket.userID)
     console.log("disconnects", socket.userID, socket.username)
   });
 });
