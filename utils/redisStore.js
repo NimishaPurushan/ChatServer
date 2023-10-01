@@ -5,6 +5,7 @@ const SESSION_TTL = 24 * 60 * 60;
 class RedisStore {
   constructor(redisConfig) {
     this.redisClient = redis.createClient(redisConfig);
+    this.redisClient.on('error', err => console.log('Redis Client Error', err));
     this.connect();
   }
 
@@ -27,7 +28,7 @@ class RedisStore {
   }
 
   async getUserInfo(username) {
-    return this.redisClient.hmGet(
+    return await this.redisClient.hmGet(
         `session:${username}`, "userId");
   }
 
