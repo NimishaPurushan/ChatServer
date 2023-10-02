@@ -28,6 +28,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const crypto = require("crypto");
 const { exit } = require("process");
+const e = require("express");
 const randomId = () => crypto.randomBytes(8).toString("hex");
 
 
@@ -125,28 +126,22 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on('sendFile', async ({ fileName, fileChunk, to }) => {
+  socket.on('sendFile', async ({ fileName, fileChunk, fileSize, fileEnd, to }) => {
     console.log('Sending file...', fileName);
     try {
 
         // Send the file data chunk to the client
-        socket.to(to).emit('file', { fileChunk: fileChunk, fileName: fileName });
+        if (fileEnd) {
+          socket.to(to).emit('file', { fileEnd: "fileEnd", fileName: fileName, fileSize:fileSize});
+          console.log('File transmission completed.', fileName);
+        }else{
+          socket.to(to).emit('file', { fileChunk: fileChunk, fileName: fileName, fileSize:fileSize });
+        }
     } catch (err) {
       console.error("Error sending the file:", err);
       io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
     }
   });
-
-  socket.on('fileEnd', async ({ fileName, to }) => {
-    console.log('File transmission completed.', fileName);
-    try {
-        socket.to(to).emit('file', { filend: "fileEnd", fileName: fileName });
-    } catch (err) {
-      console.error("Error sending the file:", err);
-      io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
-    }
-  }
-  );
 
 
   // Runs when client disconnects
