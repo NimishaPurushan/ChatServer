@@ -3,21 +3,10 @@ const http = require("http");
 const express = require("express");
 const socketio = require("socket.io");
 const formatMessage = require("./utils/messages");
-const {RedisStore} = require("./utils/redisStore")
+const bodyParser = require('body-parser');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 require("dotenv").config();
-
-const redisConfig = {
-  url: process.env.AZURE_CACHE_FOR_REDIS_URL,
-  password: process.env.AZURE_CACHE_FOR_REDIS_ACCESS_KEY,
-}
-const sessionStore= new RedisStore(redisConfig)
-const azureConfig = {
-  endpoint: process.env.ENDPOINT,
-  key : process.env.KEY
-}
-// const {SessionDB} = require("./utils/sessionDBAzure")
-// const sessionDB = new SessionDB(azureConfig)
-
 
 const app = express();
 const server = http.createServer(app);
@@ -32,87 +21,134 @@ const e = require("express");
 const randomId = () => crypto.randomBytes(8).toString("hex");
 
 
+const azureConfig = {
+  endpoint: process.env.ENDPOINT,
+  key : process.env.KEY
+}
+const {userDB} = require("./utils/sessionDBAzure")
+const userStore = new userDB(azureConfig)
+
+
+const secretKey = 'yourSecretKey'; // Replace with a strong secret key
+
+
+app.use(bodyParser.json());
+
+app.post('/register', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    console.log("username", username, password);
+    const user = await userStore.queryByUsername(username);
+    if (user) {
+      return res.status(400).json({ message: 'Username is already taken' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    userStore.saveUser(randomId(), username, hashedPassword)
+    res.status(200).json({ message: 'User registered successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Login and generate a JWT token
+app.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await userStore.queryByUsername(username);
+    if (!user) {
+      return res.status(401).json({ message: 'Authentication failed' });
+    }
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: 'Authentication failed' });
+    }  
+    // Generate a JWT token
+    const token = jwt.sign({ username }, secretKey, { expiresIn: '10h' });
+    
+    res.status(200).json({ token: token, userID: user.id, username: user.username });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/get_user_id', async (req, res) => {
+  try {
+    const username = req.query.username;
+    const password = req.query.password;
+    console.log("username", username, password);
+
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username and password are required in query parameters' });
+    }
+
+    const user = await userStore.queryByUsername(username);
+
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const passwordMatch = await bcrypt.compare(password, user.password);
+
+    if (!passwordMatch) {
+      return res.status(401).json({ message: 'Authentication failed' });
+    }
+
+    res.status(200).json({ userID: user.id, username: user.username });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Verify the JWT token
+async function validateToken(token) {
+  try {
+    const user = await jwt.verify(token, secretKey);
+    return user;
+  } catch (err) {
+    console.error("Token validation failed", err);
+    return null;
+  }
+}
+
 io.use(async (socket, next) => {
   console.log("socket.handshake.auth", socket.handshake.auth);
-  const sessionID = socket.handshake.auth.sessionID;
-  const username = socket.handshake.auth.username;
-  if (!username) {
-    return next(new Error("invalid username"));
+  const token = socket.handshake.auth.token;
+
+  if (!token) {
+    return next(new Error("Invalid token"));
   }
-  
-  
-  console.log("Session Id:", sessionID)
-  if (sessionID) {    
-    if (session) {
-      // const session = await sessionDB.findSession(username);
-      socket.sessionID = sessionID;
-      socket.userID = session.userID;
-      socket.username = session.username;
-      return next();
-    }
+
+  const user = await validateToken(token);
+
+  if (!user) {
+    return next(new Error("Invalid token"));
   }
-  socket.sessionID = randomId();
-  socket.userID = randomId();
-  socket.username = username;
-  // sessionDB.saveSession(socket.userID,socket.sessionID, socket.username)
-  sessionStore.saveUserInfo(socket.username, socket.userID, socket.sessionID)
-  next();
+  socket.userID = socket.handshake.auth.userID;
+  socket.username = socket.handshake.auth.username;
+
+  userStore.updateUser(socket.userID, true);
+
+  console.log("User connected successfully, socket.userID", socket.userID, socket.username);
+  return next();
 });
 
 // Run when client connects
 io.on("connection", (socket) => {
   
-  console.log("New WS Connection...",socket.sessionID, socket.userID, socket.username);
-  io.to(socket.userID).emit("session", {
-    sessionID: socket.sessionID,
-    userID: socket.userID,
-  });
+  console.log("New WS Connection...", socket.userID, socket.username);
   
   socket.join(socket.userID);  
   console.log(io.of("/").adapter);
   io.to(socket.userID).emit("message", "Welcome!");
 
-  // sessionDB.findAllSessions(function (err, sessions) {
-  //   if (err) {
-  //       console.error("Error retrieving sessions:", err);
-  //   } else {
-  //       const users = sessions.map((session) => {
-  //         return {
-  //           username: session.username,
-  //         };
-  //       });
-  //       console.log("users", users);
-  //       io.to(socket.userID).emit("server_message", users);
-  //   }
-  //   });
 
     // private message
     socket.on("join", async (to) => {
-      try {
-        // const sessions = await sessionDB.queryByUsername(to);
-        const session_id = await sessionStore.getUserInfo(to)
-
-        console.log("redissession", session_id);
-        io.to(socket.userID).emit("server_message", {"message": "connected", "id": session_id.toString()});
-        io.to(session_id).emit("server_message", {"message": "connected", "id": socket.userID});
-        // if (sessions.length === 0) {
-        //   console.log("User not found");
-        //   io.to(socket.userID).emit("server_message", {"message":"User not found"});
-        // } else {
-        //   console.log("Sessions:", sessions);
-    
-          // Loop through the sessions after awaiting the promise
-          // for (const session of sessions) {
-          //   console.log("Sending message to session id:",session.id.toString());
-          //   io.to(socket.userID).emit("server_message", {"message": "connected", "id": session.id.toString()});
-          //   io.to(session.id).emit("server_message", {"message": "connected", "id": socket.userID});
-          //   break;
-          // }
-      
-      } catch (err) {
-        console.error("Error querying by username:", err);
-        io.to(socket.userID).emit("server_message", {"message":"An error occurred"});
-      }
+            io.to(socket.userID).emit("server_message", {"message": "connected", "id": to});
+            io.to(to).emit("server_message", {"message": "connected", "id": socket.userID});
     });
 
   // private message
@@ -152,7 +188,7 @@ io.on("connection", (socket) => {
       formatMessage(`${socket.username} has left the chat`)
     );
     
-    // sessionDB.deleteSession(socket.userID)
+    userStore.updateUser(socket.userID, false)
     console.log("disconnects", socket.userID, socket.username)
   });
 });
@@ -160,3 +196,4 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+

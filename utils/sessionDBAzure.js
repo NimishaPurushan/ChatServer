@@ -1,11 +1,9 @@
 const { CosmosClient } = require("@azure/cosmos");
 
-class SessionDB {
+class userDB {
   constructor(cosmosConfig) {
     this.client = new CosmosClient(cosmosConfig);
-    console.log("Cosmos DB Client created", this.client);
     this.database= this.client.database("SessionDB")
-    console.log("Cosmos DB Database created", this.database);
     this.container = this.database.container("Sessions");
     console.log("Cosmos DB Container created", this.container);
   }
@@ -29,27 +27,32 @@ class SessionDB {
     }
   }
 
-  async saveSession(id, session, username) {
+  async saveUser(userID, username, hashedPassword) {
     // Create an object representing the session data
-    const sessionData = {
-      id: id,
-      session_id: session,
+    const userData = {
+      id: userID,
       username: username,
+      password: hashedPassword,
+      connected : false
     };
   
     try {
-      const sessions = await this.queryByUsername(username);
-      if (sessions.length === 0) {
-        const { resource: createdItem } = await this.container.items.create(sessionData);
-        console.log("Session Created:", createdItem);
-      } else {   
-        for(const existingItem of sessions){
-          console.log("SESSION found:", existingItem);
-          const { resource: replacedItem } = await this.container.item(existingItem.id, existingItem.id).replace(sessionData);
-          console.log("Session Updated:", replacedItem)
-        }
-        
-      }
+        const { resource: createdItem } = await this.container.items.create(userData);
+        console.log("User Created:", createdItem);
+    } catch (err) {
+      console.error("Error", err);
+    }
+  }
+
+  async updateUser(userID, connected) {
+    const { resource: userData } = await this.container.item(userID, userID).read();
+
+    // Update the connected status in the existing user document
+    userData.connected = connected;
+  
+    try {
+        const { resource: updatedItem } = await this.container.item(userID, userID).replace(userData);
+        console.log("User Updated:", updatedItem);
     } catch (err) {
       console.error("Error", err);
     }
@@ -75,7 +78,8 @@ class SessionDB {
   
       const { resources: results } = await this.container.items.query(querySpec).fetchAll();
       console.log("Success Found user", results);
-      return results;
+      if (results) return results[0]
+      else return null;
     } catch (err) {
       console.error("Error", err);
       throw err;
@@ -94,5 +98,5 @@ class SessionDB {
 }
 
 module.exports = {
-  SessionDB 
+  userDB 
 };
