@@ -157,7 +157,7 @@ io.on("connection", (socket) => {
           socket.to(to).emit("message", formatMessage(socket.username, content));
     } catch (err) {
       console.error("Error querying by username:", err);
-      io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
+      io.to(socket.userID).emit("server_message", {"response":"failure"});
     }
   });
 
@@ -175,7 +175,7 @@ io.on("connection", (socket) => {
         }
     } catch (err) {
       console.error("Error sending the file:", err);
-      io.to(socket.userID).emit("message", formatMessage("server", "An error occurred"));
+      io.to(socket.userID).emit("server_message", {"response":"failure"});
     }
   });
 
