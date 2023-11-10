@@ -25,7 +25,7 @@ const azureConfig = {
   endpoint: process.env.ENDPOINT,
   key : process.env.KEY
 }
-// const {userDB} = require("./utils/sessionDBAzure")
+const {userDB} = require("./utils/sessionDBAzure")
 const userStore = new userDB(azureConfig)
 
 
