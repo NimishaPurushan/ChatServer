@@ -12,9 +12,6 @@ const app = express();
 const server = http.createServer(app);
 const io = socketio(server);
 
-// Set static folder
-app.use(express.static(path.join(__dirname, "public")));
-
 const crypto = require("crypto");
 const { exit } = require("process");
 const e = require("express");
@@ -29,7 +26,7 @@ const {userDB} = require("./utils/sessionDBAzure")
 const userStore = new userDB(azureConfig)
 
 
-const secretKey = 'yourSecretKey'; // Replace with a strong secret key
+const secretKey = process.env.SECRET_KEY; // Secret key for signing JWT
 
 
 app.use(bodyParser.json());
@@ -155,6 +152,19 @@ io.on("connection", (socket) => {
   socket.on("private message", async ({ content, to }) => {
     try {
           socket.to(to).emit("message", formatMessage(socket.username, content));
+          console.log("private message:", "from:", socket.username, " to:", to, " content:", content);
+    } catch (err) {
+      console.error("Error querying by username:", err);
+      io.to(socket.userID).emit("server_message", {"response":"failure"});
+    }
+  });
+
+  
+  // response
+  socket.on("response", async ({ content, to, response }) => {
+    try {
+          socket.to(to).emit("response", {"response":response, "content":content, "id": socket.username});
+          console.log("response:", "from:", socket.username, " to:", to, " content:", content);
     } catch (err) {
       console.error("Error querying by username:", err);
       io.to(socket.userID).emit("server_message", {"response":"failure"});
