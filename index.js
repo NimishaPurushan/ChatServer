@@ -48,6 +48,16 @@ app.post('/register', async (req, res) => {
   }
 });
 
+app.get('/', async (req, res) => {
+  try{
+    res.status(200).json({ message: 'Server is running' });
+  }
+  catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Login and generate a JWT token
 app.post('/login', async (req, res) => {
   try {
