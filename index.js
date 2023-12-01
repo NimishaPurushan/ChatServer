@@ -203,9 +203,7 @@ io.on("connection", (socket) => {
   // Runs when client disconnects
   socket.on("disconnect", () => {
     console.log("disconnects", socket.userID, socket.username)
-    io.to(socket.userID).emit(
-      "message",
-      formatMessage(`${socket.username} has left the chat`)
+    io.to(socket.userID).emit("server_message", {"response":`${socket.username} has left the chat`}
     );
     
     userStore.updateUser(socket.userID, false)
